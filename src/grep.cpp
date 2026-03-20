@@ -11,9 +11,15 @@
 #include <thread>
 #include <climits>
 #include <cstring>
+#include <memory>
+#include <future>
 #include <type_traits>
 #include <string_view>
 #include <functional>
+
+#if __cplusplus <= 201703L
+#error "Need to be compiled with C++20" 
+#endif // __cplusplus
 
 namespace detail 
 { 
@@ -63,46 +69,77 @@ class task_worker {
     public: 
         task_worker() = default; 
 
-    private: 
+        // Create worker at compile time 
+        template <typename F> constexpr task_worker(F&& f) 
+        { 
+            using DecayF = std::decay_t<F>;
+            
+            if constexpr (is_small_v<DecayF>()) 
+                new (stack) DecayF(std::forward<F> (f));
+            else 
+                data = new char[stkSize+1];
+
+            invoke_fn = [](void *p) 
+            { 
+                (*static_cast<DecayF*> (p))();
+            };
+
+            destroy_fn = [](void *p) 
+            { 
+                static_cast<DecayF*> (p)->~DecayF();
+            };
+
+            move_fn = [](void *src, void *dst) 
+            { 
+                new (dst) DecayF(*static_cast<DecayF*>(src));
+                static_cast<DecayF*> (src)->~DecayF(); 
+            };
+        }
+
+        task_worker(const task_worker&) = delete; 
+        task_worker &operator=(const task_worker&) = delete;
+
+    private:
+        size_t stkSize = stackSize;
+
         std::function<void(void*)> *invoke_fn   = nullptr; 
         std::function<void(void*)> *destroy_fn  = nullptr; 
         std::function<void(void*)> *move_fn     = nullptr; 
         
+        template <typename T>
+        constexpr bool is_small_v() const 
+        { 
+            static_assert(sizeof(T) <= stkSize, 
+                    "Task metadata too large for the thread stack"); 
+            
+            return stkSize <= TASK_STACK_SIZE; 
+        }
+
         union 
         {
             alignas(std::max_align_t) char stack[stackSize];    // Inlined buffer for SBO
             alignas(std::max_align_t) char *data;               // Dynamically allocated buffer 
-        }
+        };
 }; 
 
-class PoolBuilder
-{ 
-    class Pool;
-    public: 
-        PoolBuilder() { }
-
-        Pool* buildPool() 
-        { 
-            return nullptr;
-        }
-};
-
-class Pool 
+template <bool EnablePriorityScheduling = true>
+class ThreadPool 
 { 
     public: 
-        Pool(int num_threads = N_CORE) 
+        using Priority = std::int8_t;
+        
+        ThreadPool() 
         {
 
         }
    
-        Pool &operator=(Pool &mmAlloc)
+        ThreadPool &operator=(ThreadPool &mmAlloc)
         {
-            memcpy(&builder, &mmAlloc.builder, sizeof(PoolBuilder));
             return *this;
         }
+
     private: 
         std::vector<std::thread> threadPool;
-        PoolBuilder builder;
 };
 
 } // namespace tp
