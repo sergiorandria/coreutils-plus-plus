@@ -1,3 +1,5 @@
+// This implementation is in progress ...
+
 #ifndef _GNU_SOURCE 
 #define _GNU_SOURCE 
 #endif 
@@ -5,17 +7,19 @@
 #include <iostream> 
 #include <mutex> 
 #include <string>
+#include <vector>
 #include <thread>
+#include <climits>
+#include <cstring>
 #include <type_traits>
 #include <string_view>
+#include <functional>
 
 namespace detail 
 { 
-int hashFvn1(string_view __v)
+int hashFvn1(std::string_view __v)
 { 
-
-
-
+    return INT_MAX;
 }
 
 } // namespace detail
@@ -29,48 +33,76 @@ namespace fs
 
 namespace tp 
 { 
- 
+
 #ifdef LIMIT_HARDWARE_USAGE 
 #ifndef BUILD_MAX_CORE 
 #define BUILD_MAX_CORE 64 // Limit max cpu to 64 for 
                           // processor with more than that
 #endif // BUILD_MAX_CORE 
+
 #endif // LIMIT_HARDWARE_USAGE 
+
+// For small buffer optimization 
+#ifndef TASK_STACK_SIZE 
+#define TASK_STACK_SIZE 1024
+#endif // TASK_STACK_SIZE  
+
      
 #ifndef N_CORE
 // The explanation of this choice is inside fast-wc.cpp tp namespace. 
 // The main difference is that we can now compile grep.cpp with 
 // N_CORE defined at compile-time. 
 inline unsigned int N_CORE = std::thread::hardware_concurrency(); 
+#endif // N_CORE
 
+template <size_t stackSize = TASK_STACK_SIZE>
+class task_worker { 
+// This class follows a multithreaded design pattern called 
+// thread pool pattern. A task can only be performed three operations: 
+// destroy, moved, invoke 
+    public: 
+        task_worker() = default; 
 
-
-struct thread
-{ 
-    int id;
-    
-};
-
-class ::Pool; 
+    private: 
+        std::function<void(void*)> *invoke_fn   = nullptr; 
+        std::function<void(void*)> *destroy_fn  = nullptr; 
+        std::function<void(void*)> *move_fn     = nullptr; 
+        
+        union 
+        {
+            alignas(std::max_align_t) char stack[stackSize];    // Inlined buffer for SBO
+            alignas(std::max_align_t) char *data;               // Dynamically allocated buffer 
+        }
+}; 
 
 class PoolBuilder
 { 
+    class Pool;
     public: 
         PoolBuilder() { }
 
-        Pool* buildPool() { } 
+        Pool* buildPool() 
+        { 
+            return nullptr;
+        }
 };
 
 class Pool 
 { 
     public: 
-        Pool() 
-        { 
-            threadPool = buildPool(); 
+        Pool(int num_threads = N_CORE) 
+        {
+
         }
-    
+   
+        Pool &operator=(Pool &mmAlloc)
+        {
+            memcpy(&builder, &mmAlloc.builder, sizeof(PoolBuilder));
+            return *this;
+        }
     private: 
-        std::vector<thread> threadPool;
+        std::vector<std::thread> threadPool;
+        PoolBuilder builder;
 };
 
 } // namespace tp
@@ -127,9 +159,9 @@ std::mutex __grep_internal_class::gMutex;
 } // namespace core 
 
 int  
-main(int argc, const *argv[]) 
+main(int argc, const char *argv[]) 
 { 
-    ios_base::sync_with_stdio(false);  
+    std::ios_base::sync_with_stdio(false);  
 
 
     return 0; 
