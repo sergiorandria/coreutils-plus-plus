@@ -1,6 +1,6 @@
 CXX      := g++
 TARGET   := fast-wc
-SRC      := fast-wc.cpp
+SRC      := src/fast-wc.cpp
 
 CXXFLAGS := -O3 -march=native -static -s -fno-rtti \
             -ffunction-sections -fdata-sections \
